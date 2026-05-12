@@ -1,0 +1,1 @@
+const e=require('electron'); console.log('type', typeof e); console.log('isArrayLike', Object.keys(e).slice(0,5)); console.log('app', e.app); process.exit(0);

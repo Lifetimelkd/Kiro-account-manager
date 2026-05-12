@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AccountManager } from './components/accounts'
 import { Sidebar, type PageType } from './components/layout'
-import { HomePage, AboutPage, SettingsPage, MachineIdPage, KiroSettingsPage, ProxyPage, KProxyPage } from './components/pages'
+import { HomePage, AboutPage, AutomationPage, SettingsPage, MachineIdPage, KiroSettingsPage, ProxyPage, KProxyPage } from './components/pages'
 import { UpdateDialog } from './components/UpdateDialog'
 import { CloseConfirmDialog } from './components/CloseConfirmDialog'
 import { useAccountsStore } from './store/accounts'
@@ -132,6 +132,8 @@ function App(): React.JSX.Element {
         return <HomePage />
       case 'accounts':
         return <AccountManager />
+      case 'automation':
+        return <AutomationPage />
       case 'machineId':
         return <MachineIdPage />
       case 'kiroSettings':

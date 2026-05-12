@@ -2,10 +2,12 @@ import { app, shell, BrowserWindow, ipcMain, dialog, globalShortcut } from 'elec
 import { autoUpdater } from 'electron-updater'
 import * as machineIdModule from './machineId'
 import { join } from 'path'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { resolve } from 'path'
 import { writeFile, readFile } from 'fs/promises'
+import { access } from 'fs/promises'
 import { encode, decode } from 'cbor-x'
 import { ProxyAgent, fetch as undiciFetch, type RequestInit as UndiciRequestInit } from 'undici'
+import { spawn } from 'child_process'
 import icon from '../../resources/icon.png?asset'
 import { ProxyServer, type ProxyAccount, type ProxyConfig } from './proxy'
 import { 
@@ -16,7 +18,7 @@ import {
   type KProxyConfig,
   type DeviceIdMapping
 } from './kproxy'
-import { fetchKiroModels, fetchSubscriptionToken, fetchAvailableSubscriptions, setUseKProxyForApiInProxy } from './proxy/kiroApi'
+import { fetchKiroModels, fetchSubscriptionToken, fetchAvailableSubscriptions, enableAccountOverage, setUseKProxyForApiInProxy } from './proxy/kiroApi'
 import { proxyLogStore } from './proxy/logger'
 import {
   createTray,
@@ -29,6 +31,46 @@ import {
   type TraySettings,
   defaultTraySettings
 } from './tray'
+
+const isDev = !app.isPackaged
+
+function setAppUserModelId(id: string): void {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId(isDev ? process.execPath : id)
+  }
+}
+
+function watchWindowShortcuts(window: BrowserWindow): void {
+  const { webContents } = window
+  webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+
+    if (isDev) {
+      if (input.code === 'F12') {
+        if (webContents.isDevToolsOpened()) {
+          webContents.closeDevTools()
+        } else {
+          webContents.openDevTools({ mode: 'undocked' })
+        }
+        event.preventDefault()
+      }
+      return
+    }
+
+    if (input.code === 'KeyR' && (input.control || input.meta)) {
+      event.preventDefault()
+    }
+    if (input.code === 'KeyI' && ((input.alt && input.meta) || (input.control && input.shift))) {
+      event.preventDefault()
+    }
+    if (!input.shift && (input.code === 'Minus' || input.code === 'Equal') && (input.control || input.meta)) {
+      event.preventDefault()
+    }
+    if (input.shift && input.code === 'Equal' && (input.control || input.meta)) {
+      event.preventDefault()
+    }
+  })
+}
 
 // ============ 自动更新配置 ============
 autoUpdater.autoDownload = false
@@ -153,6 +195,98 @@ function getKProxyAgent(): ProxyAgent | undefined {
     requestTls: {
       rejectUnauthorized: false // 允许自签名证书
     }
+  })
+}
+
+function getRepoRoot(): string {
+  return resolve(__dirname, '../../../..')
+}
+
+function getRegisterProjectDir(): string {
+  return resolve(getRepoRoot(), 'k_i_r_o-register')
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function getPythonCommand(): Promise<string> {
+  const registerDir = getRegisterProjectDir()
+  const candidates = [
+    'python3',
+    'python'
+  ]
+
+  if (process.platform === 'win32') {
+    candidates.unshift(
+      resolve(registerDir, '.venv/Scripts/python.exe'),
+      resolve(registerDir, 'venv/Scripts/python.exe')
+    )
+  } else {
+    candidates.unshift(
+      resolve(registerDir, '.venv/bin/python'),
+      resolve(registerDir, 'venv/bin/python')
+    )
+  }
+
+  for (const candidate of candidates) {
+    if (candidate === 'python3' || candidate === 'python') return candidate
+    if (await fileExists(candidate)) return candidate
+  }
+
+  return process.platform === 'win32' ? 'python' : 'python3'
+}
+
+async function runRegisterBridge(payload: unknown): Promise<unknown> {
+  const registerDir = getRegisterProjectDir()
+  const bridgePath = resolve(registerDir, 'manager_bridge.py')
+  const pythonCmd = await getPythonCommand()
+
+  return await new Promise((resolvePromise, reject) => {
+    const child = spawn(pythonCmd, [bridgePath], {
+      cwd: registerDir,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8'
+      },
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString()
+    })
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString()
+    })
+
+    child.on('error', (error) => {
+      reject(error)
+    })
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `Python bridge exited with code ${code}`))
+        return
+      }
+
+      try {
+        resolvePromise(JSON.parse(stdout || '{}'))
+      } catch (error) {
+        reject(new Error(`Invalid bridge response: ${stdout || String(error)}`))
+      }
+    })
+
+    child.stdin.write(JSON.stringify(payload))
+    child.stdin.end()
   })
 }
 
@@ -1440,6 +1574,20 @@ function createWindow(): void {
     }
   })
 
+  console.log('[Window] BrowserWindow created')
+  mainWindow.once('show', () => {
+    console.log('[Window] show event fired')
+  })
+  mainWindow.once('ready-to-show', () => {
+    console.log('[Window] ready-to-show event fired')
+  })
+  mainWindow.webContents.once('did-finish-load', () => {
+    console.log('[Window] did-finish-load event fired')
+  })
+  mainWindow.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.error('[Window] did-fail-load:', errorCode, errorDescription)
+  })
+
   mainWindow.on('ready-to-show', () => {
     // 设置带版本号的标题（HTML 加载后会覆盖初始标题）
     mainWindow?.setTitle(`Kiro 账号管理器 v${app.getVersion()}`)
@@ -1572,10 +1720,19 @@ function createWindow(): void {
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+
+  if (isDev) {
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isVisible()) {
+        console.log('[Window] forcing show fallback')
+        mainWindow.show()
+      }
+    }, 2500)
   }
 }
 
@@ -1645,7 +1802,7 @@ app.whenReady().then(async () => {
   initTray()
 
   // 初始化自动更新（仅生产环境）
-  if (!is.dev) {
+  if (!isDev) {
     setupAutoUpdater()
     // 启动后延迟检查更新
     setTimeout(() => {
@@ -1654,13 +1811,13 @@ app.whenReady().then(async () => {
   }
 
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.kiro.account-manager')
+  setAppUserModelId('com.kiro.account-manager')
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
   // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
   app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+    watchWindowShortcuts(window)
   })
 
   // IPC: 打开外部链接
@@ -1782,7 +1939,7 @@ app.whenReady().then(async () => {
 
   // IPC: 检查更新
   ipcMain.handle('check-for-updates', async () => {
-    if (is.dev) {
+    if (isDev) {
       return { hasUpdate: false, message: '开发环境不支持更新检查' }
     }
     try {
@@ -1800,7 +1957,7 @@ app.whenReady().then(async () => {
 
   // IPC: 下载更新
   ipcMain.handle('download-update', async () => {
-    if (is.dev) {
+    if (isDev) {
       return { success: false, message: '开发环境不支持更新' }
     }
     try {
@@ -4871,6 +5028,76 @@ app.whenReady().then(async () => {
     }
   })
 
+  ipcMain.handle('account-enable-overage', async (_event, accessToken: string, region?: string) => {
+    try {
+      const result = await enableAccountOverage({ accessToken, region: region || 'us-east-1' } as ProxyAccount)
+      return result
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to enable overage'
+      }
+    }
+  })
+
+  ipcMain.handle('account-batch-subscription-urls', async (_event, items: Array<{ id: string; accessToken: string; subscriptionType?: string; region?: string }>) => {
+    const results: Array<{ id: string; success: boolean; url?: string; status?: string; error?: string }> = []
+
+    for (const item of items) {
+      try {
+        const result = await fetchSubscriptionToken(
+          { accessToken: item.accessToken, region: item.region || 'us-east-1' } as ProxyAccount,
+          item.subscriptionType
+        )
+        if (result.encodedVerificationUrl) {
+          results.push({
+            id: item.id,
+            success: true,
+            url: result.encodedVerificationUrl,
+            status: result.status
+          })
+        } else {
+          results.push({
+            id: item.id,
+            success: false,
+            error: result.message || 'No subscription URL returned'
+          })
+        }
+      } catch (error) {
+        results.push({
+          id: item.id,
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to get subscription URL'
+        })
+      }
+    }
+
+    return { success: true, results }
+  })
+
+  ipcMain.handle('account-batch-enable-overage', async (_event, items: Array<{ id: string; accessToken: string; region?: string }>) => {
+    const results: Array<{ id: string; success: boolean; error?: string }> = []
+
+    for (const item of items) {
+      try {
+        const result = await enableAccountOverage({ accessToken: item.accessToken, region: item.region || 'us-east-1' } as ProxyAccount)
+        results.push({
+          id: item.id,
+          success: result.success,
+          error: result.success ? undefined : result.message
+        })
+      } catch (error) {
+        results.push({
+          id: item.id,
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to enable overage'
+        })
+      }
+    }
+
+    return { success: true, results }
+  })
+
   // IPC: 在新窗口打开订阅链接
   ipcMain.handle('open-subscription-window', async (_event, url: string) => {
     try {
@@ -4889,6 +5116,77 @@ app.whenReady().then(async () => {
       return { success: true }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Failed to open window' }
+    }
+  })
+
+  ipcMain.handle('automation-register-batch', async (_event, config: unknown) => {
+    try {
+      const result = await runRegisterBridge({
+        action: 'register-batch',
+        payload: config
+      })
+      return result
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Batch register failed'
+      }
+    }
+  })
+
+  ipcMain.handle('automation-google-login', async (_event, config: unknown) => {
+    try {
+      const result = await runRegisterBridge({
+        action: 'google-login',
+        payload: config
+      })
+      return result
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Google login failed'
+      }
+    }
+  })
+
+  ipcMain.handle('automation-subscribe-batch', async (_event, config: unknown) => {
+    try {
+      const result = await runRegisterBridge({
+        action: 'subscribe-batch',
+        payload: config
+      })
+      return result
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Batch subscribe failed'
+      }
+    }
+  })
+
+  ipcMain.handle('automation-self-check', async () => {
+    try {
+      const registerDir = getRegisterProjectDir()
+      const bridgePath = resolve(registerDir, 'manager_bridge.py')
+      const pythonCmd = await getPythonCommand()
+      const bridgeExists = await fileExists(bridgePath)
+      const bridgeResult = bridgeExists
+        ? await runRegisterBridge({ action: 'self-check', payload: {} })
+        : { success: false, error: 'manager_bridge.py not found' }
+
+      return {
+        success: true,
+        registerDir,
+        pythonCmd,
+        bridgePath,
+        bridgeExists,
+        bridgeResult
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Self check failed'
+      }
     }
   })
 

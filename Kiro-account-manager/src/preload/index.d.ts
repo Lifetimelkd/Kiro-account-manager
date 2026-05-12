@@ -584,8 +584,17 @@ interface KiroApi {
   // 获取订阅管理/支付链接
   accountGetSubscriptionUrl: (accessToken: string, subscriptionType?: string, region?: string) => Promise<{ success: boolean; error?: string; url?: string; status?: string }>
 
+  accountEnableOverage: (accessToken: string, region?: string) => Promise<{ success: boolean; message?: string }>
+  accountBatchSubscriptionUrls: (items: Array<{ id: string; accessToken: string; subscriptionType?: string; region?: string }>) => Promise<{ success: boolean; results: Array<{ id: string; success: boolean; url?: string; status?: string; error?: string }> }>
+  accountBatchEnableOverage: (items: Array<{ id: string; accessToken: string; region?: string }>) => Promise<{ success: boolean; results: Array<{ id: string; success: boolean; error?: string }> }>
+
   // 在新窗口打开订阅链接
   openSubscriptionWindow: (url: string) => Promise<{ success: boolean; error?: string }>
+
+  automationRegisterBatch: (config: unknown) => Promise<unknown>
+  automationGoogleLogin: (config: unknown) => Promise<unknown>
+  automationSubscribeBatch: (config: unknown) => Promise<unknown>
+  automationSelfCheck: () => Promise<unknown>
 
   // 保存代理日志
   proxySaveLogs: (logs: Array<{ time: string; path: string; status: number; tokens?: number }>) => Promise<{ success: boolean; error?: string }>

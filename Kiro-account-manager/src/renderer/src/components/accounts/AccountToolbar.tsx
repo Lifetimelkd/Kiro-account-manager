@@ -21,7 +21,9 @@ import {
   ChevronDown,
   Check,
   X,
-  Minus
+  Minus,
+  Link,
+  Wallet
 } from 'lucide-react'
 
 interface AccountToolbarProps {
@@ -66,6 +68,8 @@ export function AccountToolbar({
 
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isChecking, setIsChecking] = useState(false)
+  const [isBatchSubscribing, setIsBatchSubscribing] = useState(false)
+  const [isBatchOverage, setIsBatchOverage] = useState(false)
   const [showGroupMenu, setShowGroupMenu] = useState(false)
   const [showTagMenu, setShowTagMenu] = useState(false)
   
@@ -175,6 +179,60 @@ export function AccountToolbar({
     if (selectedCount === 0) return
     if (confirm(isEn ? `Delete ${selectedCount} selected accounts?` : `确定要删除选中的 ${selectedCount} 个账号吗？`)) {
       removeAccounts(Array.from(selectedIds))
+    }
+  }
+
+  const handleBatchSubscriptionLinks = async (): Promise<void> => {
+    if (selectedCount === 0) return
+    setIsBatchSubscribing(true)
+    try {
+      const selectedAccounts = Array.from(selectedIds)
+        .map(id => accounts.get(id))
+        .filter((account): account is NonNullable<typeof account> => Boolean(account))
+        .filter(account => Boolean(account.credentials?.accessToken))
+
+      const result = await window.api.accountBatchSubscriptionUrls(selectedAccounts.map(account => ({
+        id: account.id,
+        accessToken: account.credentials.accessToken,
+        region: account.credentials.region
+      })))
+
+      const successUrls = result.results.filter(item => item.success && item.url).map(item => item.url as string)
+      const failed = result.results.filter(item => !item.success)
+
+      if (successUrls.length > 0) {
+        await navigator.clipboard.writeText(successUrls.join('\n'))
+      }
+
+      const summary = isEn
+        ? `Copied ${successUrls.length} subscription link(s)${failed.length > 0 ? `, ${failed.length} failed` : ''}`
+        : `已复制 ${successUrls.length} 个订阅链接${failed.length > 0 ? `，失败 ${failed.length} 个` : ''}`
+      alert(summary)
+    } finally {
+      setIsBatchSubscribing(false)
+    }
+  }
+
+  const handleBatchEnableOverage = async (): Promise<void> => {
+    if (selectedCount === 0) return
+    setIsBatchOverage(true)
+    try {
+      const selectedAccounts = Array.from(selectedIds)
+        .map(id => accounts.get(id))
+        .filter((account): account is NonNullable<typeof account> => Boolean(account))
+        .filter(account => Boolean(account.credentials?.accessToken))
+
+      const result = await window.api.accountBatchEnableOverage(selectedAccounts.map(account => ({
+        id: account.id,
+        accessToken: account.credentials.accessToken,
+        region: account.credentials.region
+      })))
+
+      const success = result.results.filter(item => item.success).length
+      const failed = result.results.length - success
+      alert(isEn ? `Overage enabled: ${success} success, ${failed} failed` : `超额开启完成：成功 ${success} 个，失败 ${failed} 个`)
+    } finally {
+      setIsBatchOverage(false)
     }
   }
 
@@ -462,6 +520,34 @@ export function AccountToolbar({
               <RefreshCw className="h-4 w-4 mr-1" />
             )}
             {isEn ? 'Check' : '检查'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleBatchSubscriptionLinks}
+            disabled={isBatchSubscribing || selectedCount === 0}
+            title={isEn ? 'Get subscription links for selected accounts' : '为选中账号批量获取订阅链接'}
+          >
+            {isBatchSubscribing ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Link className="h-4 w-4 mr-1" />
+            )}
+            {isEn ? 'Subscribe' : '订阅'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleBatchEnableOverage}
+            disabled={isBatchOverage || selectedCount === 0}
+            title={isEn ? 'Enable overage for selected accounts' : '为选中账号批量开启超额'}
+          >
+            {isBatchOverage ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Wallet className="h-4 w-4 mr-1" />
+            )}
+            {isEn ? 'Overage' : '超额'}
           </Button>
           <Button
             variant="ghost"

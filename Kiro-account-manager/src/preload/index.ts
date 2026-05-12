@@ -673,9 +673,37 @@ const api = {
     return ipcRenderer.invoke('account-get-subscription-url', accessToken, subscriptionType, region)
   },
 
+  accountEnableOverage: (accessToken: string, region?: string): Promise<{ success: boolean; message?: string }> => {
+    return ipcRenderer.invoke('account-enable-overage', accessToken, region)
+  },
+
+  accountBatchSubscriptionUrls: (items: Array<{ id: string; accessToken: string; subscriptionType?: string; region?: string }>): Promise<{ success: boolean; results: Array<{ id: string; success: boolean; url?: string; status?: string; error?: string }> }> => {
+    return ipcRenderer.invoke('account-batch-subscription-urls', items)
+  },
+
+  accountBatchEnableOverage: (items: Array<{ id: string; accessToken: string; region?: string }>): Promise<{ success: boolean; results: Array<{ id: string; success: boolean; error?: string }> }> => {
+    return ipcRenderer.invoke('account-batch-enable-overage', items)
+  },
+
   // 在新窗口打开订阅链接
   openSubscriptionWindow: (url: string): Promise<{ success: boolean; error?: string }> => {
     return ipcRenderer.invoke('open-subscription-window', url)
+  },
+
+  automationRegisterBatch: (config: unknown): Promise<unknown> => {
+    return ipcRenderer.invoke('automation-register-batch', config)
+  },
+
+  automationGoogleLogin: (config: unknown): Promise<unknown> => {
+    return ipcRenderer.invoke('automation-google-login', config)
+  },
+
+  automationSubscribeBatch: (config: unknown): Promise<unknown> => {
+    return ipcRenderer.invoke('automation-subscribe-batch', config)
+  },
+
+  automationSelfCheck: (): Promise<unknown> => {
+    return ipcRenderer.invoke('automation-self-check')
   },
 
   // 保存代理日志

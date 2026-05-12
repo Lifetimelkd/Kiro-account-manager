@@ -44,6 +44,7 @@ const en = {
   nav: {
     home: 'Home',
     accounts: 'Accounts',
+    automation: 'Automation',
     machineId: 'Machine ID',
     kiroSettings: 'Kiro Settings',
     proxy: 'API Proxy',

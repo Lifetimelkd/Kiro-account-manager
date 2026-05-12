@@ -1,5 +1,6 @@
 export { HomePage } from './HomePage'
 export { AboutPage } from './AboutPage'
+export { AutomationPage } from './AutomationPage'
 export { SettingsPage } from './SettingsPage'
 export { MachineIdPage } from './MachineIdPage'
 export { KiroSettingsPage } from './KiroSettingsPage'

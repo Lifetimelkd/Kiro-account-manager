@@ -1266,3 +1266,47 @@ export async function fetchSubscriptionToken(
     return { message: error instanceof Error ? error.message : 'Unknown error' }
   }
 }
+
+export async function enableAccountOverage(account: ProxyAccount): Promise<{ success: boolean; message?: string }> {
+  const baseUrl = getQServiceEndpoint(account.region)
+  const url = `${baseUrl}/UpdateUserSettings`
+  const machineId = getAccountMachineId(account.id, account.machineId)
+
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${account.accessToken}`,
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'User-Agent': getKiroUserAgent(machineId),
+    'x-amz-user-agent': getKiroAmzUserAgent(machineId),
+    'x-amzn-codewhisperer-optout-preference': 'OPTIN'
+  }
+
+  try {
+    const response = await fetchWithProxy(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        overageConfiguration: {
+          overageStatus: 'ENABLED'
+        }
+      })
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '')
+      console.error('[KiroAPI] UpdateUserSettings failed:', response.status, errorText)
+      return {
+        success: false,
+        message: errorText || `HTTP ${response.status}`
+      }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('[KiroAPI] UpdateUserSettings error:', error)
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }
+  }
+}
