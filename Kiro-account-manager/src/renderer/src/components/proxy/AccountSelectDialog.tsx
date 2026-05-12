@@ -72,8 +72,26 @@ export function AccountSelectDialog({
 
   // 检测是否为封禁账号（通过 lastError 判断）
   const isBannedAccount = (acc: Account): boolean => {
-    return acc.lastError?.includes('UnauthorizedException') || 
-           acc.lastError?.includes('AccountSuspendedException') || false
+    const lowerError = acc.lastError?.toLowerCase()
+    if (!lowerError) return false
+    const hasSuspendedSignal =
+      lowerError.includes('accountsuspendedexception') ||
+      lowerError.includes('account suspended') ||
+      lowerError.includes('账户已封禁') ||
+      lowerError.includes('已封禁') ||
+      /\b423\b/.test(lowerError)
+    if (hasSuspendedSignal) return true
+    if (
+      lowerError.includes('fetch failed') ||
+      lowerError.includes('network') ||
+      lowerError.includes('token expired') ||
+      lowerError.includes('token 过期') ||
+      lowerError.includes('刷新失败') ||
+      lowerError.includes('unauthorizedexception')
+    ) {
+      return false
+    }
+    return false
   }
 
   const getStatusInfo = (acc: Account): { icon: React.ReactNode; text: string; color: string } | null => {

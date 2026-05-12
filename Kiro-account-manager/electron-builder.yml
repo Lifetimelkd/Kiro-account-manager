@@ -11,6 +11,12 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+  - node_modules/koffi/**
+  - node_modules/tlsclientwrapper/**
+  - node_modules/piscina/**
+extraResources:
+  - from: "resources/tls-client-xgo-1.14.0-windows-amd64.dll"
+    to: "tls-client-xgo-1.14.0-windows-amd64.dll"
 protocols:
   name: Kiro Auth
   schemes:
